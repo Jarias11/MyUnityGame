@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da8b6b6304199784798876cc6995f5ed, type: 3}
+  m_Name: MainGroundTileSt
+  m_EditorClassIdentifier: Assembly-CSharp::GroundTileSet
+  grassTile: {fileID: 11400000, guid: 84b9d99694b6c9142b04ad4154d52b43, type: 2}
+  groundTile: {fileID: 11400000, guid: e7394d83b2d9b09479cf4b5ec5034ae6, type: 2}
+  tilledTile: {fileID: 11400000, guid: 32571f6615332c84d8476e16d0062d52, type: 2}
+  grassAliases: []
+  groundAliases: []
+  tilledAliases: []
+  normalTint: {r: 1, g: 1, b: 1, a: 1}
+  wateredTint: {r: 0.65, g: 0.65, b: 0.65, a: 1}
