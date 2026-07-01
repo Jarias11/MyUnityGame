@@ -201,6 +201,18 @@ public static class SaveManager
         SaveGame(saveData);
     }
 
+    public static void SaveCrops(
+        List<CropSaveData> crops)
+    {
+        GameSaveData saveData = LoadGame();
+
+        saveData.crops =
+            crops ??
+            new List<CropSaveData>();
+
+        SaveGame(saveData);
+    }
+
     public static bool TryGetPickupState(
         string entityId,
         out PickupSaveData pickupState)

@@ -9,6 +9,7 @@ public class PlayerTileInteractor : MonoBehaviour
     [SerializeField] private PlayerInventory playerInventory;
     [SerializeField] private Transform playerTransform;
     [SerializeField] private Camera worldCamera;
+    [SerializeField] private CropManager cropManager;
 
     [Header("Tile Selector")]
     [SerializeField] private Tilemap hoverTilemap;
@@ -38,6 +39,9 @@ public class PlayerTileInteractor : MonoBehaviour
 
         if (worldCamera == null)
             worldCamera = Camera.main;
+
+        if (cropManager == null)
+            cropManager = FindAnyObjectByType<CropManager>();
     }
 
     private void Update()
@@ -129,7 +133,7 @@ public class PlayerTileInteractor : MonoBehaviour
 
         if (Mouse.current.rightButton.isPressed)
         {
-            TryUseSelectedToolWhileHolding();
+            TryUseSelectedHotbarItemWhileHolding();
         }
         else
         {
@@ -137,7 +141,7 @@ public class PlayerTileInteractor : MonoBehaviour
         }
     }
 
-    private void TryUseSelectedToolWhileHolding()
+    private void TryUseSelectedHotbarItemWhileHolding()
     {
         if (!hasValidHoveredCell)
             return;
@@ -148,13 +152,13 @@ public class PlayerTileInteractor : MonoBehaviour
             return;
         }
 
-        TryUseSelectedToolOnCell(hoveredCell);
+        TryUseSelectedHotbarItemOnCell(hoveredCell);
 
         lastUsedCellWhileHolding = hoveredCell;
         hasUsedCellWhileHolding = true;
     }
 
-    private bool TryUseSelectedToolOnCell(Vector3Int targetCell)
+    private bool TryUseSelectedHotbarItemOnCell(Vector3Int targetCell)
     {
         if (EventSystem.current != null &&
             EventSystem.current.IsPointerOverGameObject())
@@ -163,21 +167,6 @@ public class PlayerTileInteractor : MonoBehaviour
         }
 
         if (playerInventory == null)
-            return false;
-
-        if (!playerInventory.TryGetSelectedItem(
-                out ItemData selectedItem))
-        {
-            return false;
-        }
-
-        if (selectedItem == null)
-            return false;
-
-        if (!selectedItem.CanBeUsedFromHotbar)
-            return false;
-
-        if (selectedItem.UseType != ItemUseType.ToolAction)
             return false;
 
         GroundManager groundManager = GroundManager.Instance;
@@ -193,6 +182,48 @@ public class PlayerTileInteractor : MonoBehaviour
         {
             return false;
         }
+
+        CropManager resolvedCropManager = ResolveCropManager();
+
+        // Harvest comes first so a mature crop can be collected even if
+        // the player is holding a tool or seed bag.
+        if (resolvedCropManager != null &&
+            resolvedCropManager.IsInitialized &&
+            resolvedCropManager.TryHarvestCrop(
+                targetCell,
+                playerInventory))
+        {
+            return true;
+        }
+
+        ItemData selectedItem;
+
+        if (!playerInventory.TryGetSelectedItem(out selectedItem))
+            return false;
+
+        if (selectedItem == null)
+            return false;
+
+        if (!selectedItem.CanBeUsedFromHotbar)
+            return false;
+
+        // Seed planting.
+        if (selectedItem.UseType == ItemUseType.Place)
+        {
+            if (resolvedCropManager != null &&
+                resolvedCropManager.IsInitialized &&
+                resolvedCropManager.TryPlantSeed(
+                    targetCell,
+                    selectedItem,
+                    playerInventory))
+            {
+                return true;
+            }
+        }
+
+        // Tool usage.
+        if (selectedItem.UseType != ItemUseType.ToolAction)
+            return false;
 
         switch (selectedItem.ToolType)
         {
@@ -216,6 +247,21 @@ public class PlayerTileInteractor : MonoBehaviour
         }
 
         return false;
+    }
+
+    private CropManager ResolveCropManager()
+    {
+        if (cropManager != null)
+            return cropManager;
+
+        if (CropManager.Instance != null)
+        {
+            cropManager = CropManager.Instance;
+            return cropManager;
+        }
+
+        cropManager = FindAnyObjectByType<CropManager>();
+        return cropManager;
     }
 
     private bool TryUseShovel(

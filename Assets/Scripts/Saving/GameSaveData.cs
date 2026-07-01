@@ -4,7 +4,7 @@ using System.Collections.Generic;
 [Serializable]
 public class GameSaveData
 {
-    public int saveVersion = 3;
+    public int saveVersion = 4;
 
     // Time
     public int seconds = 0;
@@ -30,6 +30,10 @@ public class GameSaveData
     public List<GroundCellSaveData> groundChanges =
         new List<GroundCellSaveData>();
 
+    // Crops planted on the crop tilemap.
+    public List<CropSaveData> crops =
+        new List<CropSaveData>();
+
     // Scene pickups that were collected or partially collected.
     public List<PickupSaveData> pickups =
         new List<PickupSaveData>();
@@ -41,6 +45,9 @@ public class GameSaveData
 
         if (groundChanges == null)
             groundChanges = new List<GroundCellSaveData>();
+
+        if (crops == null)
+            crops = new List<CropSaveData>();
 
         if (pickups == null)
             pickups = new List<PickupSaveData>();

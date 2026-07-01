@@ -8,6 +8,13 @@ public class GameTime : MonoBehaviour
     public static GameTime Instance { get; private set; }
 
     /// <summary>
+    /// Fired right before totalDays increases.
+    /// CropManager uses this to grow crops before GroundManager dries watered soil.
+    /// The int is the next total day.
+    /// </summary>
+    public static event Action<int> BeforeDayChanged;
+
+    /// <summary>
     /// Fired after totalDays increases.
     /// GroundManager uses this to dry and age soil.
     /// </summary>
@@ -166,7 +173,12 @@ public class GameTime : MonoBehaviour
         if (hours >= 24)
         {
             hours = 0;
-            totalDays++;
+
+            int nextTotalDay = totalDays + 1;
+
+            BeforeDayChanged?.Invoke(nextTotalDay);
+
+            totalDays = nextTotalDay;
 
             DayChanged?.Invoke(totalDays);
 
