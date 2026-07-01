@@ -2,24 +2,35 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Attach this to a fixed building or large obstacle.
-/// Its Collider2D bounds are converted into blocked Ground Tilemap cells.
-///
-/// This does not move or paint the building. The building remains a normal
-/// GameObject placed at a fixed location in the Scene.
-/// </summary>
+[RequireComponent(typeof(EntityId))]
 public class GroundBlocker : MonoBehaviour
 {
     [SerializeField] private Collider2D footprintCollider;
 
     private Coroutine registrationRoutine;
     private bool isRegistered;
-    private EntityId blockerId;
+    private EntityId entityId;
+
+    private string BlockerId
+    {
+        get
+        {
+            if (entityId == null)
+                entityId = GetComponent<EntityId>();
+
+            if (entityId == null)
+                return "";
+
+            return entityId.Id;
+        }
+    }
 
     private void Awake()
     {
-        blockerId = GetEntityId();
+        entityId = GetComponent<EntityId>();
+
+        if (entityId != null)
+            entityId.EnsureId();
 
         if (footprintCollider == null)
             footprintCollider = GetComponent<Collider2D>();
@@ -28,6 +39,11 @@ public class GroundBlocker : MonoBehaviour
     private void Reset()
     {
         footprintCollider = GetComponent<Collider2D>();
+
+        EntityId id = GetComponent<EntityId>();
+
+        if (id != null)
+            id.EnsureId();
     }
 
     private void OnEnable()
@@ -81,6 +97,16 @@ public class GroundBlocker : MonoBehaviour
             Debug.LogError(
                 "GroundBlocker needs a Collider2D footprint.",
                 this);
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(BlockerId))
+        {
+            Debug.LogError(
+                "GroundBlocker needs a valid EntityId.",
+                this);
+
             return;
         }
 
@@ -91,7 +117,7 @@ public class GroundBlocker : MonoBehaviour
                 footprintCollider.bounds);
 
         groundManager.RegisterBlocker(
-            blockerId,
+            BlockerId,
             occupiedCells);
 
         isRegistered = true;
@@ -102,10 +128,10 @@ public class GroundBlocker : MonoBehaviour
         if (!isRegistered)
             return;
 
-        if (GroundManager.Instance != null)
+        if (GroundManager.Instance != null &&
+            !string.IsNullOrWhiteSpace(BlockerId))
         {
-            GroundManager.Instance.UnregisterBlocker(
-                blockerId);
+            GroundManager.Instance.UnregisterBlocker(BlockerId);
         }
 
         isRegistered = false;

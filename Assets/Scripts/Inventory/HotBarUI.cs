@@ -16,12 +16,13 @@ public class HotbarUI : MonoBehaviour
     [Tooltip("Scroll up usually moves left/previous. Turn this on if it feels backwards.")]
     [SerializeField] private bool invertScrollDirection = false;
 
-    private readonly List<InventorySlotUI> hotbarSlotViews = new List<InventorySlotUI>();
+    private readonly List<InventorySlotUI> hotbarSlotViews =
+        new List<InventorySlotUI>();
 
     private void Start()
     {
         if (playerInventory == null)
-            playerInventory = playerInventory = FindAnyObjectByType<PlayerInventory>();
+            playerInventory = FindAnyObjectByType<PlayerInventory>();
 
         BuildSlots();
 
@@ -30,8 +31,8 @@ public class HotbarUI : MonoBehaviour
             playerInventory.OnInventoryChanged += Refresh;
             playerInventory.OnHotbarSelectionChanged += RefreshSelection;
 
-            // Makes sure the game begins with hotbar slot 1 selected.
-            playerInventory.SelectHotbarIndex(0);
+            playerInventory.SelectHotbarIndex(
+                playerInventory.SelectedHotbarIndex);
         }
 
         Refresh();
@@ -92,7 +93,8 @@ public class HotbarUI : MonoBehaviour
         if (Keyboard.current == null)
             return;
 
-        int maxNumber = Mathf.Min(playerInventory.HotbarSize, 9);
+        int maxNumber =
+            Mathf.Min(playerInventory.HotbarSize, 9);
 
         for (int number = 1; number <= maxNumber; number++)
         {
@@ -128,14 +130,27 @@ public class HotbarUI : MonoBehaviour
 
     private void BuildSlots()
     {
-        if (playerInventory == null || slotParent == null || slotPrefab == null)
+        if (playerInventory == null ||
+            slotParent == null ||
+            slotPrefab == null)
+        {
             return;
+        }
 
         ClearOldSlotViews();
 
+        Canvas rootCanvas = GetRootCanvas();
+
         for (int i = 0; i < playerInventory.HotbarSize; i++)
         {
-            InventorySlotUI newSlotView = Instantiate(slotPrefab, slotParent);
+            InventorySlotUI newSlotView =
+                Instantiate(slotPrefab, slotParent);
+
+            newSlotView.Initialize(
+                playerInventory,
+                i,
+                rootCanvas);
+
             hotbarSlotViews.Add(newSlotView);
         }
     }
@@ -151,9 +166,13 @@ public class HotbarUI : MonoBehaviour
         for (int i = 0; i < hotbarSlotViews.Count; i++)
         {
             InventorySlot slot = playerInventory.GetSlot(i);
-            bool isSelected = i == playerInventory.SelectedHotbarIndex;
+            bool isSelected =
+                i == playerInventory.SelectedHotbarIndex;
 
-            hotbarSlotViews[i].SetSlot(slot, i + 1, isSelected);
+            hotbarSlotViews[i].SetSlot(
+                slot,
+                i + 1,
+                isSelected);
         }
     }
 
@@ -167,11 +186,19 @@ public class HotbarUI : MonoBehaviour
 
     private void ClearOldSlotViews()
     {
+        if (slotParent == null)
+            return;
+
         for (int i = slotParent.childCount - 1; i >= 0; i--)
         {
             Destroy(slotParent.GetChild(i).gameObject);
         }
 
         hotbarSlotViews.Clear();
+    }
+
+    private Canvas GetRootCanvas()
+    {
+        return GetComponentInParent<Canvas>();
     }
 }

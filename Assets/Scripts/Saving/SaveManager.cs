@@ -65,6 +65,7 @@ public static class SaveManager
                 "No save file found. Using default save data.");
 
             cachedData = new GameSaveData();
+            cachedData.EnsureValidCollections();
             return cachedData;
         }
 
@@ -81,8 +82,7 @@ public static class SaveManager
         if (cachedData == null)
         {
             Debug.LogError(
-                "No valid save could be loaded. " +
-                "Using default save data.");
+                "No valid save could be loaded. Using default save data.");
 
             cachedData = new GameSaveData();
         }
@@ -95,8 +95,7 @@ public static class SaveManager
     {
         if (saveData == null)
         {
-            Debug.LogError(
-                "SaveGame received null save data.");
+            Debug.LogError("SaveGame received null save data.");
             return;
         }
 
@@ -105,8 +104,7 @@ public static class SaveManager
             saveData.EnsureValidCollections();
             cachedData = saveData;
 
-            string json =
-                JsonUtility.ToJson(saveData, true);
+            string json = JsonUtility.ToJson(saveData, true);
 
             File.WriteAllText(TemporaryPath, json);
 
@@ -121,8 +119,7 @@ public static class SaveManager
         catch (System.Exception exception)
         {
             Debug.LogError(
-                "Failed to save game: " +
-                exception.Message);
+                "Failed to save game: " + exception.Message);
         }
     }
 
@@ -142,6 +139,56 @@ public static class SaveManager
         SaveGame(saveData);
     }
 
+    public static void SavePlayerState(
+        Vector3 playerPosition,
+        string currentScene)
+    {
+        GameSaveData saveData = LoadGame();
+
+        saveData.hasPlayerPosition = true;
+        saveData.currentScene = currentScene ?? "";
+        saveData.playerX = playerPosition.x;
+        saveData.playerY = playerPosition.y;
+        saveData.playerZ = playerPosition.z;
+
+        SaveGame(saveData);
+    }
+
+    public static void SaveInventory(
+        List<InventorySlotSaveData> inventorySlots,
+        int selectedHotbarIndex)
+    {
+        GameSaveData saveData = LoadGame();
+
+        saveData.selectedHotbarIndex =
+            Mathf.Max(0, selectedHotbarIndex);
+
+        saveData.inventorySlots.Clear();
+
+        if (inventorySlots != null)
+        {
+            for (int i = 0; i < inventorySlots.Count; i++)
+            {
+                InventorySlotSaveData slot = inventorySlots[i];
+
+                if (slot == null || slot.IsEmpty())
+                {
+                    saveData.inventorySlots.Add(
+                        new InventorySlotSaveData("", 0));
+                }
+                else
+                {
+                    saveData.inventorySlots.Add(
+                        new InventorySlotSaveData(
+                            slot.itemId,
+                            Mathf.Max(0, slot.quantity)));
+                }
+            }
+        }
+
+        SaveGame(saveData);
+    }
+
     public static void SaveGroundChanges(
         List<GroundCellSaveData> groundChanges)
     {
@@ -152,6 +199,78 @@ public static class SaveManager
             new List<GroundCellSaveData>();
 
         SaveGame(saveData);
+    }
+
+    public static bool TryGetPickupState(
+        string entityId,
+        out PickupSaveData pickupState)
+    {
+        pickupState = null;
+
+        if (string.IsNullOrWhiteSpace(entityId))
+            return false;
+
+        GameSaveData saveData = LoadGame();
+        int index = FindPickupIndex(saveData, entityId);
+
+        if (index < 0)
+            return false;
+
+        pickupState = saveData.pickups[index];
+        return pickupState != null;
+    }
+
+    public static bool IsPickupCollected(string entityId)
+    {
+        PickupSaveData pickupState;
+
+        if (!TryGetPickupState(entityId, out pickupState))
+            return false;
+
+        return pickupState.collected;
+    }
+
+    public static void SavePickupState(
+        string entityId,
+        string itemId,
+        int quantity,
+        bool collected)
+    {
+        if (string.IsNullOrWhiteSpace(entityId))
+            return;
+
+        GameSaveData saveData = LoadGame();
+
+        int index = FindPickupIndex(saveData, entityId);
+
+        PickupSaveData pickupState =
+            index >= 0
+                ? saveData.pickups[index]
+                : null;
+
+        if (pickupState == null)
+        {
+            pickupState = new PickupSaveData();
+            saveData.pickups.Add(pickupState);
+        }
+
+        pickupState.entityId = entityId;
+        pickupState.itemId = itemId ?? "";
+        pickupState.quantity = Mathf.Max(0, quantity);
+        pickupState.collected = collected;
+
+        SaveGame(saveData);
+    }
+
+    public static void MarkPickupCollected(
+        string entityId,
+        string itemId)
+    {
+        SavePickupState(
+            entityId,
+            itemId,
+            0,
+            true);
     }
 
     public static void DeleteSave()
@@ -168,6 +287,27 @@ public static class SaveManager
     public static string GetSavePathForDebug()
     {
         return SavePath;
+    }
+
+    private static int FindPickupIndex(
+        GameSaveData saveData,
+        string entityId)
+    {
+        if (saveData == null || saveData.pickups == null)
+            return -1;
+
+        for (int i = 0; i < saveData.pickups.Count; i++)
+        {
+            PickupSaveData pickup = saveData.pickups[i];
+
+            if (pickup == null)
+                continue;
+
+            if (pickup.entityId == entityId)
+                return i;
+        }
+
+        return -1;
     }
 
     private static GameSaveData TryLoadFile(string path)

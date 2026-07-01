@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(Collider2D))]
+[RequireComponent(typeof(EntityId))]
 public class ItemPickup : MonoBehaviour
 {
     [Header("Pickup Data")]
@@ -17,15 +18,38 @@ public class ItemPickup : MonoBehaviour
     [Tooltip("Optional object like a small 'Press E' text above the item.")]
     [SerializeField] private GameObject pickupPrompt;
 
+    [Header("Saving")]
+    [SerializeField] private bool savePickupState = true;
+
     [Header("Visual Helper")]
     [Tooltip("If true, this will try to use the ItemData icon as this object's SpriteRenderer sprite.")]
     [SerializeField] private bool useItemIconAsSprite = true;
 
     private PlayerInventory nearbyInventory;
     private SpriteRenderer spriteRenderer;
+    private EntityId entityId;
+
+    private string SaveId
+    {
+        get
+        {
+            if (entityId == null)
+                entityId = GetComponent<EntityId>();
+
+            if (entityId == null)
+                return "";
+
+            return entityId.Id;
+        }
+    }
 
     private void Awake()
     {
+        entityId = GetComponent<EntityId>();
+
+        if (entityId != null)
+            entityId.EnsureId();
+
         spriteRenderer = GetComponent<SpriteRenderer>();
 
         Collider2D pickupCollider = GetComponent<Collider2D>();
@@ -35,6 +59,11 @@ public class ItemPickup : MonoBehaviour
             pickupPrompt.SetActive(false);
 
         RefreshVisual();
+    }
+
+    private void Start()
+    {
+        LoadSavedPickupState();
     }
 
     private void Update()
@@ -56,7 +85,8 @@ public class ItemPickup : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
-        PlayerInventory inventory = other.GetComponentInParent<PlayerInventory>();
+        PlayerInventory inventory =
+            other.GetComponentInParent<PlayerInventory>();
 
         if (inventory == null)
             return;
@@ -72,7 +102,8 @@ public class ItemPickup : MonoBehaviour
 
     private void OnTriggerExit2D(Collider2D other)
     {
-        PlayerInventory inventory = other.GetComponentInParent<PlayerInventory>();
+        PlayerInventory inventory =
+            other.GetComponentInParent<PlayerInventory>();
 
         if (inventory == null)
             return;
@@ -93,15 +124,22 @@ public class ItemPickup : MonoBehaviour
 
         if (itemData == null)
         {
-            Debug.LogWarning($"{name} has no ItemData assigned.");
+            Debug.LogWarning(
+                name + " has no ItemData assigned.",
+                this);
+
             return;
         }
 
-        bool addedEverything = inventory.TryAddItem(itemData, quantity, out int remainingAmount);
+        bool addedEverything =
+            inventory.TryAddItem(
+                itemData,
+                quantity,
+                out int remainingAmount);
 
         if (addedEverything)
         {
-            Destroy(gameObject);
+            MarkCollectedAndDestroy();
             return;
         }
 
@@ -109,12 +147,79 @@ public class ItemPickup : MonoBehaviour
         if (remainingAmount < quantity)
         {
             quantity = remainingAmount;
-            Debug.Log($"Picked up some {itemData.DisplayName}. {quantity} left on the ground.");
+
+            SaveRemainingQuantity();
+
+            Debug.Log(
+                "Picked up some " +
+                itemData.DisplayName +
+                ". " +
+                quantity +
+                " left on the ground.",
+                this);
         }
         else
         {
-            Debug.Log($"Inventory is full. Could not pick up {itemData.DisplayName}.");
+            Debug.Log(
+                "Inventory is full. Could not pick up " +
+                itemData.DisplayName + ".",
+                this);
         }
+    }
+
+    private void LoadSavedPickupState()
+    {
+        if (!savePickupState)
+            return;
+
+        if (string.IsNullOrWhiteSpace(SaveId))
+            return;
+
+        PickupSaveData pickupState;
+
+        if (!SaveManager.TryGetPickupState(
+                SaveId,
+                out pickupState))
+        {
+            return;
+        }
+
+        if (pickupState.collected)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        if (pickupState.quantity > 0)
+            quantity = pickupState.quantity;
+    }
+
+    private void MarkCollectedAndDestroy()
+    {
+        if (savePickupState &&
+            !string.IsNullOrWhiteSpace(SaveId))
+        {
+            SaveManager.MarkPickupCollected(
+                SaveId,
+                itemData != null ? itemData.ItemId : "");
+        }
+
+        Destroy(gameObject);
+    }
+
+    private void SaveRemainingQuantity()
+    {
+        if (!savePickupState)
+            return;
+
+        if (string.IsNullOrWhiteSpace(SaveId))
+            return;
+
+        SaveManager.SavePickupState(
+            SaveId,
+            itemData != null ? itemData.ItemId : "",
+            quantity,
+            false);
     }
 
     private void RefreshVisual()
@@ -132,6 +237,19 @@ public class ItemPickup : MonoBehaviour
             return;
 
         spriteRenderer.sprite = itemData.Icon;
+    }
+
+    private void Reset()
+    {
+        Collider2D pickupCollider = GetComponent<Collider2D>();
+
+        if (pickupCollider != null)
+            pickupCollider.isTrigger = true;
+
+        EntityId id = GetComponent<EntityId>();
+
+        if (id != null)
+            id.EnsureId();
     }
 
     private void OnValidate()

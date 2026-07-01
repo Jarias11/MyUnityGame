@@ -2,12 +2,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-/// <summary>
-/// Owns the gameplay state for every recognized cell on the painted Ground Tilemap.
-///
-/// The Tilemap painted in the Scene is the starting map.
-/// Save data contains only cells that changed from that starting map.
-/// </summary>
 [DefaultExecutionOrder(-100)]
 public class GroundManager : MonoBehaviour
 {
@@ -18,9 +12,7 @@ public class GroundManager : MonoBehaviour
     [SerializeField] private GroundTileSet groundTileSet;
 
     [Header("Optional Edit Restrictions")]
-    [Tooltip(
-        "Optional hidden marker Tilemap. Any cell containing any marker Tile " +
-        "is considered permanently non-editable.")]
+    [Tooltip("Optional hidden marker Tilemap. Any cell containing any marker Tile is considered permanently non-editable.")]
     [SerializeField] private Tilemap nonEditableMarkerTilemap;
 
     [SerializeField] private bool hideRestrictionMarkersDuringPlay = true;
@@ -63,8 +55,8 @@ public class GroundManager : MonoBehaviour
     private readonly Dictionary<Vector3Int, int> blockerCounts =
         new Dictionary<Vector3Int, int>();
 
-    private readonly Dictionary<EntityId, HashSet<Vector3Int>> blockerCellsById =
-        new Dictionary<EntityId, HashSet<Vector3Int>>();
+    private readonly Dictionary<string, HashSet<Vector3Int>> blockerCellsById =
+        new Dictionary<string, HashSet<Vector3Int>>();
 
     private readonly HashSet<Vector3Int> cropOccupiedCells =
         new HashSet<Vector3Int>();
@@ -123,6 +115,7 @@ public class GroundManager : MonoBehaviour
             Debug.LogError(
                 "GroundManager needs a Ground Tilemap reference.",
                 this);
+
             return;
         }
 
@@ -131,6 +124,7 @@ public class GroundManager : MonoBehaviour
             Debug.LogError(
                 "GroundManager needs a GroundTileSet asset.",
                 this);
+
             return;
         }
 
@@ -187,15 +181,14 @@ public class GroundManager : MonoBehaviour
                 nonEditableMarkerTilemap == null ||
                 !nonEditableMarkerTilemap.HasTile(position);
 
-            GroundCellRuntime cell = new GroundCellRuntime(
-                position,
-                startingType,
-                baseEditable);
+            GroundCellRuntime cell =
+                new GroundCellRuntime(
+                    position,
+                    startingType,
+                    baseEditable);
 
             cells[position] = cell;
 
-            // Do not replace the painted Tile here.
-            // This preserves any hand-painted starting variation.
             ApplyTint(position, startingType);
         }
 
@@ -320,7 +313,9 @@ public class GroundManager : MonoBehaviour
         return false;
     }
 
-    public bool CanModifyCell(Vector3Int position)
+    public bool CanModifyCell(
+        Vector3Int position,
+        bool allowCropOccupied = false)
     {
         GroundCellRuntime cell;
 
@@ -340,28 +335,31 @@ public class GroundManager : MonoBehaviour
             return false;
         }
 
-        if (cropOccupiedCells.Contains(position))
+        if (!allowCropOccupied &&
+            cropOccupiedCells.Contains(position))
+        {
             return false;
+        }
 
         return true;
     }
 
-    /// <summary>
-    /// Ready for the future tool controller.
-    /// No player-input code calls this yet.
-    /// </summary>
     public bool TrySetGroundType(
         Vector3Int position,
         GroundType newType,
-        bool requireEditable = true)
+        bool requireEditable = true,
+        bool allowCropOccupied = false)
     {
         GroundCellRuntime cell;
 
         if (!cells.TryGetValue(position, out cell))
             return false;
 
-        if (requireEditable && !CanModifyCell(position))
+        if (requireEditable &&
+            !CanModifyCell(position, allowCropOccupied))
+        {
             return false;
+        }
 
         if (cell.CurrentType == newType)
         {
@@ -443,9 +441,12 @@ public class GroundManager : MonoBehaviour
     }
 
     public void RegisterBlocker(
-        EntityId blockerId,
+        string blockerId,
         IEnumerable<Vector3Int> positions)
     {
+        if (string.IsNullOrWhiteSpace(blockerId))
+            return;
+
         UnregisterBlocker(blockerId);
 
         HashSet<Vector3Int> registeredPositions =
@@ -466,8 +467,11 @@ public class GroundManager : MonoBehaviour
         blockerCellsById[blockerId] = registeredPositions;
     }
 
-    public void UnregisterBlocker(EntityId blockerId)
+    public void UnregisterBlocker(string blockerId)
     {
+        if (string.IsNullOrWhiteSpace(blockerId))
+            return;
+
         HashSet<Vector3Int> registeredPositions;
 
         if (!blockerCellsById.TryGetValue(
@@ -495,10 +499,6 @@ public class GroundManager : MonoBehaviour
         blockerCellsById.Remove(blockerId);
     }
 
-    /// <summary>
-    /// Future Crop components can register their occupied cells here.
-    /// This prevents unused tilled soil from reverting under a crop.
-    /// </summary>
     public void RegisterCropCell(Vector3Int position)
     {
         cropOccupiedCells.Add(position);
@@ -520,6 +520,7 @@ public class GroundManager : MonoBehaviour
     public void ProcessNewDay()
     {
         bool anythingChanged = false;
+
         int revertAfterDays =
             Mathf.Max(1, unusedDaysBeforeReturningToGround);
 
@@ -570,6 +571,7 @@ public class GroundManager : MonoBehaviour
                 "GroundTileSet has no Tile assigned for " +
                 cell.CurrentType + ".",
                 groundTileSet);
+
             return;
         }
 
@@ -582,7 +584,6 @@ public class GroundManager : MonoBehaviour
         Vector3Int position,
         GroundType groundType)
     {
-        // Some Tile assets lock their color by default.
         groundTilemap.RemoveTileFlags(
             position,
             TileFlags.LockColor);

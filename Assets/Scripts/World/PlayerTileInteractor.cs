@@ -5,259 +5,278 @@ using UnityEngine.Tilemaps;
 
 public class PlayerTileInteractor : MonoBehaviour
 {
-	[Header("References")]
-	[SerializeField] private PlayerInventory playerInventory;
-	[SerializeField] private Transform playerTransform;
-	[SerializeField] private Camera worldCamera;
+    [Header("References")]
+    [SerializeField] private PlayerInventory playerInventory;
+    [SerializeField] private Transform playerTransform;
+    [SerializeField] private Camera worldCamera;
 
-	[Header("Tilemaps")]
-	[Tooltip("The tilemap that contains your grass, ground, and tilled tiles.")]
-	[SerializeField] private Tilemap groundTilemap;
+    [Header("Tile Selector")]
+    [SerializeField] private Tilemap hoverTilemap;
+    [SerializeField] private TileBase hoverTile;
 
-	[Tooltip("Optional tilemap used only to draw the hover selector.")]
-	[SerializeField] private Tilemap hoverTilemap;
+    [Tooltip("If true, the hover tile stays on the last valid in-range tile when the mouse leaves range.")]
+    [SerializeField] private bool keepLastHoverWhenOutOfRange = true;
 
-	[Header("Tile Selector")]
-	[Tooltip("A simple transparent/outline tile that shows which cell the player is hovering.")]
-	[SerializeField] private TileBase hoverTile;
+    [Header("Interaction Settings")]
+    [SerializeField] private float interactionRange = 2.5f;
 
-	[Tooltip("If true, the hover tile stays on the last valid in-range tile when the mouse leaves range.")]
-	[SerializeField] private bool keepLastHoverWhenOutOfRange = true;
+    private Vector3Int hoveredCell;
+    private Vector3Int highlightedCell;
+    private Vector3Int lastUsedCellWhileHolding;
 
-	[Header("Ground Tiles")]
-	[Tooltip("Tiles that count as grass. The shovel can turn these into ground.")]
-	[SerializeField] private TileBase[] grassTiles;
+    private bool hasValidHoveredCell;
+    private bool hasHighlightedCell;
+    private bool hasUsedCellWhileHolding;
 
-	[Tooltip("The tile placed when grass becomes ground.")]
-	[SerializeField] private TileBase groundTile;
+    private void Awake()
+    {
+        if (playerInventory == null)
+            playerInventory = GetComponent<PlayerInventory>();
 
-	[Tooltip("Tiles that count as normal ground. The hoe can turn these into tilled ground.")]
-	[SerializeField] private TileBase[] groundTiles;
+        if (playerTransform == null)
+            playerTransform = transform;
 
-	[Tooltip("The tile placed when ground becomes tilled.")]
-	[SerializeField] private TileBase tilledTile;
+        if (worldCamera == null)
+            worldCamera = Camera.main;
+    }
 
-	[Header("Interaction Settings")]
-	[SerializeField] private float interactionRange = 2.5f;
+    private void Update()
+    {
+        UpdateHoveredCell();
+        UpdateHoverVisual();
+        HandleToolInput();
+    }
 
-	private Vector3Int hoveredCell;
-	private Vector3Int highlightedCell;
-	private Vector3Int lastUsedCellWhileHolding;
+    private void OnDisable()
+    {
+        ClearHoverVisual();
+    }
 
-	private bool hasValidHoveredCell;
-	private bool hasHighlightedCell;
-	private bool hasUsedCellWhileHolding;
+    private void UpdateHoveredCell()
+    {
+        hasValidHoveredCell = false;
 
-	private void Awake()
-	{
-		if (playerInventory == null)
-			playerInventory = GetComponent<PlayerInventory>();
+        GroundManager groundManager = GroundManager.Instance;
 
-		if (playerTransform == null)
-			playerTransform = transform;
+        if (groundManager == null || !groundManager.IsInitialized)
+            return;
 
-		if (worldCamera == null)
-			worldCamera = Camera.main;
-	}
+        if (worldCamera == null || Mouse.current == null)
+            return;
 
-	private void Update()
-	{
-		UpdateHoveredCell();
-		UpdateHoverVisual();
-		HandleToolInput();
-	}
+        Vector2 mouseScreenPosition =
+            Mouse.current.position.ReadValue();
 
-	private void UpdateHoveredCell()
-	{
-		hasValidHoveredCell = false;
+        Vector3 screenPosition = new Vector3(
+            mouseScreenPosition.x,
+            mouseScreenPosition.y,
+            Mathf.Abs(worldCamera.transform.position.z));
 
-		if (worldCamera == null || groundTilemap == null || Mouse.current == null)
-			return;
+        Vector3 worldPosition =
+            worldCamera.ScreenToWorldPoint(screenPosition);
 
-		Vector2 mouseScreenPosition = Mouse.current.position.ReadValue();
+        worldPosition.z = 0f;
 
-		Vector3 screenPosition = new Vector3(
-			mouseScreenPosition.x,
-			mouseScreenPosition.y,
-			Mathf.Abs(worldCamera.transform.position.z)
-		);
+        Vector3Int mouseCell =
+            groundManager.WorldToCell(worldPosition);
 
-		Vector3 worldPosition = worldCamera.ScreenToWorldPoint(screenPosition);
-		worldPosition.z = 0f;
+        if (!groundManager.HasGroundCell(mouseCell))
+            return;
 
-		Vector3Int mouseCell = groundTilemap.WorldToCell(worldPosition);
+        if (!IsCellInRange(mouseCell))
+            return;
 
-		TileBase tileAtMouse = groundTilemap.GetTile(mouseCell);
+        hoveredCell = mouseCell;
+        hasValidHoveredCell = true;
+    }
 
-		if (tileAtMouse == null)
-			return;
+    private void UpdateHoverVisual()
+    {
+        if (hoverTilemap == null || hoverTile == null)
+            return;
 
-		if (!IsCellInRange(mouseCell))
-			return;
+        if (!hasValidHoveredCell)
+        {
+            if (!keepLastHoverWhenOutOfRange)
+                ClearHoverVisual();
 
-		hoveredCell = mouseCell;
-		hasValidHoveredCell = true;
-	}
+            return;
+        }
 
-	private void UpdateHoverVisual()
-	{
-		if (hoverTilemap == null || hoverTile == null)
-			return;
+        if (hasHighlightedCell && highlightedCell != hoveredCell)
+        {
+            hoverTilemap.SetTile(highlightedCell, null);
+        }
 
-		if (!hasValidHoveredCell)
-		{
-			if (!keepLastHoverWhenOutOfRange)
-				ClearHoverVisual();
+        hoverTilemap.SetTile(hoveredCell, hoverTile);
+        highlightedCell = hoveredCell;
+        hasHighlightedCell = true;
+    }
 
-			return;
-		}
+    private void ClearHoverVisual()
+    {
+        if (!hasHighlightedCell || hoverTilemap == null)
+            return;
 
-		if (hasHighlightedCell && highlightedCell != hoveredCell)
-		{
-			hoverTilemap.SetTile(highlightedCell, null);
-		}
+        hoverTilemap.SetTile(highlightedCell, null);
+        hasHighlightedCell = false;
+    }
 
-		hoverTilemap.SetTile(hoveredCell, hoverTile);
-		highlightedCell = hoveredCell;
-		hasHighlightedCell = true;
-	}
+    private void HandleToolInput()
+    {
+        if (Mouse.current == null)
+            return;
 
-	private void ClearHoverVisual()
-	{
-		if (!hasHighlightedCell || hoverTilemap == null)
-			return;
+        if (Mouse.current.rightButton.isPressed)
+        {
+            TryUseSelectedToolWhileHolding();
+        }
+        else
+        {
+            hasUsedCellWhileHolding = false;
+        }
+    }
 
-		hoverTilemap.SetTile(highlightedCell, null);
-		hasHighlightedCell = false;
-	}
+    private void TryUseSelectedToolWhileHolding()
+    {
+        if (!hasValidHoveredCell)
+            return;
 
-	private void HandleToolInput()
-	{
-		if (Mouse.current == null)
-			return;
+        if (hasUsedCellWhileHolding &&
+            lastUsedCellWhileHolding == hoveredCell)
+        {
+            return;
+        }
 
-		if (Mouse.current.rightButton.isPressed)
-		{
-			TryUseSelectedToolWhileHolding();
-		}
-		else
-		{
-			hasUsedCellWhileHolding = false;
-		}
-	}
+        TryUseSelectedToolOnCell(hoveredCell);
 
-	private void TryUseSelectedToolWhileHolding()
-	{
-		if (!hasValidHoveredCell)
-			return;
+        lastUsedCellWhileHolding = hoveredCell;
+        hasUsedCellWhileHolding = true;
+    }
 
-		if (hasUsedCellWhileHolding && lastUsedCellWhileHolding == hoveredCell)
-			return;
+    private bool TryUseSelectedToolOnCell(Vector3Int targetCell)
+    {
+        if (EventSystem.current != null &&
+            EventSystem.current.IsPointerOverGameObject())
+        {
+            return false;
+        }
 
-		bool usedTool = TryUseSelectedToolOnCell(hoveredCell);
+        if (playerInventory == null)
+            return false;
 
-		lastUsedCellWhileHolding = hoveredCell;
-		hasUsedCellWhileHolding = true;
-	}
+        if (!playerInventory.TryGetSelectedItem(
+                out ItemData selectedItem))
+        {
+            return false;
+        }
 
-	private bool TryUseSelectedToolOnCell(Vector3Int targetCell)
-	{
-		if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
-			return false;
+        if (selectedItem == null)
+            return false;
 
-		if (playerInventory == null)
-			return false;
+        if (!selectedItem.CanBeUsedFromHotbar)
+            return false;
 
-		if (!playerInventory.TryGetSelectedItem(out ItemData selectedItem))
-			return false;
+        if (selectedItem.UseType != ItemUseType.ToolAction)
+            return false;
 
-		if (selectedItem == null)
-			return false;
+        GroundManager groundManager = GroundManager.Instance;
 
-		if (!selectedItem.CanBeUsedFromHotbar)
-			return false;
+        if (groundManager == null || !groundManager.IsInitialized)
+            return false;
 
-		if (selectedItem.UseType != ItemUseType.ToolAction)
-			return false;
+        GroundType currentGroundType;
 
-		TileBase currentTile = groundTilemap.GetTile(targetCell);
+        if (!groundManager.TryGetGroundType(
+                targetCell,
+                out currentGroundType))
+        {
+            return false;
+        }
 
-		if (currentTile == null)
-			return false;
+        switch (selectedItem.ToolType)
+        {
+            case ToolType.Shovel:
+                return TryUseShovel(
+                    groundManager,
+                    targetCell,
+                    currentGroundType);
 
-		switch (selectedItem.ToolType)
-		{
-			case ToolType.Shovel:
-				return TryUseShovel(targetCell, currentTile);
+            case ToolType.Hoe:
+                return TryUseHoe(
+                    groundManager,
+                    targetCell,
+                    currentGroundType);
 
-			case ToolType.Hoe:
-				return TryUseHoe(targetCell, currentTile);
-		}
+            case ToolType.WateringCan:
+                return TryUseWateringCan(
+                    groundManager,
+                    targetCell,
+                    currentGroundType);
+        }
 
-		return false;
-	}
+        return false;
+    }
 
-	private bool TryUseShovel(Vector3Int targetCell, TileBase currentTile)
-	{
-		if (groundTile == null)
-			return false;
+    private bool TryUseShovel(
+        GroundManager groundManager,
+        Vector3Int targetCell,
+        GroundType currentGroundType)
+    {
+        if (currentGroundType != GroundType.Grass)
+            return false;
 
-		if (!TileIsInList(currentTile, grassTiles))
-			return false;
+        return groundManager.TrySetGroundType(
+            targetCell,
+            GroundType.Ground,
+            true);
+    }
 
-		SetGroundTile(targetCell, groundTile);
-		return true;
-	}
+    private bool TryUseHoe(
+        GroundManager groundManager,
+        Vector3Int targetCell,
+        GroundType currentGroundType)
+    {
+        if (currentGroundType != GroundType.Ground)
+            return false;
 
-	private bool TryUseHoe(Vector3Int targetCell, TileBase currentTile)
-	{
-		if (tilledTile == null)
-			return false;
+        return groundManager.TrySetGroundType(
+            targetCell,
+            GroundType.TilledDry,
+            true);
+    }
 
-		if (!TileIsInList(currentTile, groundTiles))
-			return false;
+    private bool TryUseWateringCan(
+        GroundManager groundManager,
+        Vector3Int targetCell,
+        GroundType currentGroundType)
+    {
+        if (currentGroundType != GroundType.TilledDry)
+            return false;
 
-		SetGroundTile(targetCell, tilledTile);
-		return true;
-	}
+        // Crops should not block watering, but buildings/rocks still should.
+        return groundManager.TrySetGroundType(
+            targetCell,
+            GroundType.TilledWatered,
+            true,
+            true);
+    }
 
-	private void SetGroundTile(Vector3Int cell, TileBase newTile)
-	{
-		groundTilemap.SetTile(cell, newTile);
-		RefreshCellAndNeighbors(cell);
-	}
+    private bool IsCellInRange(Vector3Int cell)
+    {
+        GroundManager groundManager = GroundManager.Instance;
 
-	private void RefreshCellAndNeighbors(Vector3Int cell)
-	{
-		for (int x = -1; x <= 1; x++)
-		{
-			for (int y = -1; y <= 1; y++)
-			{
-				Vector3Int neighborCell = new Vector3Int(cell.x + x, cell.y + y, cell.z);
-				groundTilemap.RefreshTile(neighborCell);
-			}
-		}
-	}
+        if (groundManager == null || playerTransform == null)
+            return false;
 
-	private bool IsCellInRange(Vector3Int cell)
-	{
-		Vector3 cellCenter = groundTilemap.GetCellCenterWorld(cell);
-		float distance = Vector2.Distance(playerTransform.position, cellCenter);
+        Vector3 cellCenter =
+            groundManager.GetCellCenterWorld(cell);
 
-		return distance <= interactionRange;
-	}
+        float distance =
+            Vector2.Distance(
+                playerTransform.position,
+                cellCenter);
 
-	private bool TileIsInList(TileBase tile, TileBase[] tileList)
-	{
-		if (tile == null || tileList == null)
-			return false;
-
-		for (int i = 0; i < tileList.Length; i++)
-		{
-			if (tileList[i] == tile)
-				return true;
-		}
-
-		return false;
-	}
+        return distance <= interactionRange;
+    }
 }

@@ -18,20 +18,28 @@ public class PlayerInventory : MonoBehaviour
     [SerializeField] private int inventorySize = 24;
 
     [Min(1)]
-    [SerializeField] private int hotbarSize = 8;
+    [SerializeField] private int hotbarSize = 9;
 
-    [SerializeField] private List<InventorySlot> inventorySlots = new List<InventorySlot>();
+    [SerializeField] private List<InventorySlot> inventorySlots =
+        new List<InventorySlot>();
+
+    [Header("Saving")]
+    [SerializeField] private bool saveInventory = true;
+    [SerializeField] private bool loadSavedInventoryOnAwake = true;
+    [SerializeField] private ItemDatabase itemDatabase;
 
     [Header("Hotbar")]
     [SerializeField] private int selectedHotbarIndex = 0;
 
     [Header("Testing / Starting Items")]
-    [Tooltip("Useful for testing. Later, your save system can turn this off and load saved inventory instead.")]
+    [Tooltip("Used when no saved inventory exists yet.")]
     [SerializeField] private bool addStartingItemsOnAwake = true;
 
-    [SerializeField] private List<StartingItem> startingItems = new List<StartingItem>();
+    [SerializeField] private List<StartingItem> startingItems =
+        new List<StartingItem>();
 
     private bool startingItemsAdded;
+    private bool suppressSave;
 
     public event Action OnInventoryChanged;
     public event Action<int> OnHotbarSelectionChanged;
@@ -55,39 +63,72 @@ public class PlayerInventory : MonoBehaviour
 
     private void Awake()
     {
+        suppressSave = true;
+
         EnsureInventorySize();
 
-        selectedHotbarIndex = Mathf.Clamp(selectedHotbarIndex, 0, hotbarSize - 1);
+        selectedHotbarIndex =
+            Mathf.Clamp(selectedHotbarIndex, 0, hotbarSize - 1);
 
-        if (addStartingItemsOnAwake)
+        bool loadedSavedInventory = false;
+
+        if (loadSavedInventoryOnAwake)
+            loadedSavedInventory = TryLoadSavedInventory();
+
+        if (!loadedSavedInventory && addStartingItemsOnAwake)
             AddStartingItems();
+
+        selectedHotbarIndex =
+            Mathf.Clamp(selectedHotbarIndex, 0, hotbarSize - 1);
+
+        suppressSave = false;
 
         OnInventoryChanged?.Invoke();
         OnHotbarSelectionChanged?.Invoke(selectedHotbarIndex);
+
+        if (saveInventory)
+            SaveInventoryToSaveManager();
+    }
+
+    private void OnDisable()
+    {
+        if (!Application.isPlaying)
+            return;
+
+        if (saveInventory)
+            SaveInventoryToSaveManager();
     }
 
     private void OnValidate()
     {
         inventorySize = Mathf.Max(1, inventorySize);
         hotbarSize = Mathf.Clamp(hotbarSize, 1, inventorySize);
-        selectedHotbarIndex = Mathf.Clamp(selectedHotbarIndex, 0, hotbarSize - 1);
+        selectedHotbarIndex =
+            Mathf.Clamp(selectedHotbarIndex, 0, hotbarSize - 1);
 
         EnsureInventorySize();
     }
 
     public bool AddItem(ItemData item, int amount = 1)
     {
-        bool addedEverything = TryAddItem(item, amount, out int remainingAmount);
+        bool addedEverything =
+            TryAddItem(item, amount, out int remainingAmount);
 
-        if (!addedEverything)
+        if (!addedEverything && item != null)
         {
-            Debug.Log($"Inventory could not fit {remainingAmount}x {item.DisplayName}.");
+            Debug.Log(
+                "Inventory could not fit " +
+                remainingAmount + "x " +
+                item.DisplayName + ".");
         }
 
         return addedEverything;
     }
 
-    public bool TryAddItem(ItemData item, int amount, out int remainingAmount)
+    public bool TryAddItem(
+        ItemData item,
+        int amount,
+        out int remainingAmount)
     {
         remainingAmount = amount;
 
@@ -110,7 +151,9 @@ public class PlayerInventory : MonoBehaviour
 
                 if (!slot.IsEmpty && slot.Item == item)
                 {
-                    int added = slot.AddAmount(item, remainingAmount);
+                    int added =
+                        slot.AddAmount(item, remainingAmount);
+
                     remainingAmount -= added;
                 }
             }
@@ -126,13 +169,15 @@ public class PlayerInventory : MonoBehaviour
 
             if (slot.IsEmpty)
             {
-                int added = slot.AddAmount(item, remainingAmount);
+                int added =
+                    slot.AddAmount(item, remainingAmount);
+
                 remainingAmount -= added;
             }
         }
 
         if (remainingAmount != originalRemainingAmount)
-            OnInventoryChanged?.Invoke();
+            NotifyInventoryChanged();
 
         return remainingAmount <= 0;
     }
@@ -157,12 +202,14 @@ public class PlayerInventory : MonoBehaviour
 
             if (!slot.IsEmpty && slot.Item == item)
             {
-                int removed = slot.RemoveAmount(remainingAmount);
+                int removed =
+                    slot.RemoveAmount(remainingAmount);
+
                 remainingAmount -= removed;
             }
         }
 
-        OnInventoryChanged?.Invoke();
+        NotifyInventoryChanged();
         return true;
     }
 
@@ -180,7 +227,7 @@ public class PlayerInventory : MonoBehaviour
 
         if (removed > 0)
         {
-            OnInventoryChanged?.Invoke();
+            NotifyInventoryChanged();
             return true;
         }
 
@@ -212,8 +259,11 @@ public class PlayerInventory : MonoBehaviour
 
     public bool MoveSlot(int fromIndex, int toIndex)
     {
-        if (!IsValidSlotIndex(fromIndex) || !IsValidSlotIndex(toIndex))
+        if (!IsValidSlotIndex(fromIndex) ||
+            !IsValidSlotIndex(toIndex))
+        {
             return false;
+        }
 
         if (fromIndex == toIndex)
             return false;
@@ -230,21 +280,25 @@ public class PlayerInventory : MonoBehaviour
             toSlot.Set(fromSlot.Item, fromSlot.Quantity);
             fromSlot.Clear();
 
-            OnInventoryChanged?.Invoke();
+            NotifyInventoryChanged();
             return true;
         }
 
         // Merge stacks if same item.
-        if (toSlot.Item == fromSlot.Item && toSlot.Item.Stackable)
+        if (toSlot.Item == fromSlot.Item &&
+            toSlot.Item.Stackable)
         {
-            int added = toSlot.AddAmount(fromSlot.Item, fromSlot.Quantity);
+            int added =
+                toSlot.AddAmount(
+                    fromSlot.Item,
+                    fromSlot.Quantity);
 
             if (added <= 0)
                 return false;
 
             fromSlot.RemoveAmount(added);
 
-            OnInventoryChanged?.Invoke();
+            NotifyInventoryChanged();
             return true;
         }
 
@@ -255,8 +309,11 @@ public class PlayerInventory : MonoBehaviour
 
     public bool SwapSlots(int firstIndex, int secondIndex)
     {
-        if (!IsValidSlotIndex(firstIndex) || !IsValidSlotIndex(secondIndex))
+        if (!IsValidSlotIndex(firstIndex) ||
+            !IsValidSlotIndex(secondIndex))
+        {
             return false;
+        }
 
         if (firstIndex == secondIndex)
             return false;
@@ -269,7 +326,7 @@ public class PlayerInventory : MonoBehaviour
         firstSlot.Set(secondSlot.Item, secondSlot.Quantity);
         secondSlot.Set(temp.Item, temp.Quantity);
 
-        OnInventoryChanged?.Invoke();
+        NotifyInventoryChanged();
         return true;
     }
 
@@ -278,8 +335,11 @@ public class PlayerInventory : MonoBehaviour
         if (index < 0 || index >= hotbarSize)
             return false;
 
+        if (selectedHotbarIndex == index)
+            return true;
+
         selectedHotbarIndex = index;
-        OnHotbarSelectionChanged?.Invoke(selectedHotbarIndex);
+        NotifyHotbarSelectionChanged();
 
         return true;
     }
@@ -341,7 +401,126 @@ public class PlayerInventory : MonoBehaviour
             inventorySlots[i].Clear();
         }
 
-        OnInventoryChanged?.Invoke();
+        NotifyInventoryChanged();
+    }
+
+    public void SaveInventoryToSaveManager()
+    {
+        if (!saveInventory)
+            return;
+
+        List<InventorySlotSaveData> slotSaveData =
+            new List<InventorySlotSaveData>();
+
+        EnsureInventorySize();
+
+        for (int i = 0; i < inventorySlots.Count; i++)
+        {
+            InventorySlot slot = inventorySlots[i];
+
+            if (slot == null || slot.IsEmpty)
+            {
+                slotSaveData.Add(
+                    new InventorySlotSaveData("", 0));
+            }
+            else
+            {
+                slotSaveData.Add(
+                    new InventorySlotSaveData(
+                        slot.Item.ItemId,
+                        slot.Quantity));
+            }
+        }
+
+        SaveManager.SaveInventory(
+            slotSaveData,
+            selectedHotbarIndex);
+    }
+
+    private bool TryLoadSavedInventory()
+    {
+        GameSaveData saveData = SaveManager.LoadGame();
+
+        if (saveData.inventorySlots == null ||
+            saveData.inventorySlots.Count == 0)
+        {
+            return false;
+        }
+
+        ItemDatabase database = ResolveItemDatabase();
+
+        inventorySize =
+            Mathf.Max(inventorySize, saveData.inventorySlots.Count);
+
+        hotbarSize = Mathf.Clamp(hotbarSize, 1, inventorySize);
+
+        EnsureInventorySize();
+
+        for (int i = 0; i < inventorySlots.Count; i++)
+        {
+            inventorySlots[i].Clear();
+        }
+
+        for (int i = 0; i < saveData.inventorySlots.Count; i++)
+        {
+            if (!IsValidSlotIndex(i))
+                break;
+
+            InventorySlotSaveData savedSlot =
+                saveData.inventorySlots[i];
+
+            if (savedSlot == null || savedSlot.IsEmpty())
+            {
+                inventorySlots[i].Clear();
+                continue;
+            }
+
+            if (database == null)
+            {
+                Debug.LogWarning(
+                    "Cannot load saved inventory because no ItemDatabase was found.",
+                    this);
+
+                continue;
+            }
+
+            ItemData item;
+
+            if (!database.TryGetItem(savedSlot.itemId, out item))
+            {
+                Debug.LogWarning(
+                    "Saved inventory item could not be found in ItemDatabase: " +
+                    savedSlot.itemId,
+                    this);
+
+                continue;
+            }
+
+            inventorySlots[i].Set(item, savedSlot.quantity);
+        }
+
+        selectedHotbarIndex =
+            Mathf.Clamp(
+                saveData.selectedHotbarIndex,
+                0,
+                hotbarSize - 1);
+
+        return true;
+    }
+
+    private ItemDatabase ResolveItemDatabase()
+    {
+        if (itemDatabase != null)
+            return itemDatabase;
+
+        if (ItemDatabase.Instance != null)
+        {
+            itemDatabase = ItemDatabase.Instance;
+            return itemDatabase;
+        }
+
+        itemDatabase = FindAnyObjectByType<ItemDatabase>();
+        return itemDatabase;
     }
 
     private bool IsValidSlotIndex(int index)
@@ -387,5 +566,21 @@ public class PlayerInventory : MonoBehaviour
 
             AddItem(startingItem.item, startingItem.quantity);
         }
+    }
+
+    private void NotifyInventoryChanged()
+    {
+        OnInventoryChanged?.Invoke();
+
+        if (!suppressSave && saveInventory)
+            SaveInventoryToSaveManager();
+    }
+
+    private void NotifyHotbarSelectionChanged()
+    {
+        OnHotbarSelectionChanged?.Invoke(selectedHotbarIndex);
+
+        if (!suppressSave && saveInventory)
+            SaveInventoryToSaveManager();
     }
 }
